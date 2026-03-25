@@ -69,15 +69,44 @@ export async function prepareAgentMode({
     recursive: true,
   });
 
-  // Write the prompt file - use the user's prompt directly
-  const promptContent =
+  // Write the prompt file and handle slash commands.
+  // When the prompt contains a slash command (e.g. "/code-review --comment"),
+  // split it: context goes in the prompt file, slash command goes in the
+  // user-request file. This allows the SDK to process the slash command
+  // in a separate message block, matching tag mode behavior.
+  const rawPrompt =
     context.inputs.prompt ||
     `Repository: ${context.repository.owner}/${context.repository.repo}`;
 
-  await writeFile(
-    `${process.env.RUNNER_TEMP || "/tmp"}/claude-prompts/claude-prompt.txt`,
-    promptContent,
+  const slashCommandMatch = rawPrompt.match(
+    /^([\s\S]*?)(\/[a-zA-Z][a-zA-Z0-9_:-]*(?:\s[\s\S]*)?)$/,
   );
+
+  let promptContent: string;
+  if (slashCommandMatch) {
+    const contextPart = slashCommandMatch[1].trim();
+    const slashCommand = slashCommandMatch[2].trim();
+
+    // Use context if provided, otherwise provide basic repo context
+    promptContent = contextPart ||
+      `Repository: ${context.repository.owner}/${context.repository.repo}\nPR or issue context is available via gh CLI.`;
+
+    await writeFile(
+      `${process.env.RUNNER_TEMP || "/tmp"}/claude-prompts/claude-prompt.txt`,
+      promptContent,
+    );
+
+    await writeFile(
+      `${process.env.RUNNER_TEMP || "/tmp"}/claude-prompts/claude-user-request.txt`,
+      slashCommand,
+    );
+  } else {
+    promptContent = rawPrompt;
+    await writeFile(
+      `${process.env.RUNNER_TEMP || "/tmp"}/claude-prompts/claude-prompt.txt`,
+      promptContent,
+    );
+  }
 
   // Parse allowed tools from user's claude_args
   const userClaudeArgs = process.env.CLAUDE_ARGS || "";
