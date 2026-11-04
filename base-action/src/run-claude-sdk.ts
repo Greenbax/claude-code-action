@@ -167,7 +167,20 @@ export async function runClaudeWithSdk(
       }
 
       if (message.type === "result") {
-        resultMessage = message as SDKResultMessage;
+        if (
+          hasJsonSchema &&
+          message.subtype === "success" &&
+          message.structured_output === undefined &&
+          resultMessage?.subtype === "success" &&
+          resultMessage.session_id === message.session_id
+        ) {
+          resultMessage = {
+            ...message,
+            structured_output: resultMessage.structured_output,
+          };
+        } else {
+          resultMessage = message;
+        }
       }
     }
   } catch (error) {
